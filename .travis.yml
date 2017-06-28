@@ -1,0 +1,13 @@
+language: c
+
+dist: trusty
+sudo: false
+
+addons:
+  apt:
+    packages:
+      - libxrandr-dev
+
+script:
+  - cd src/
+  - make SHARED_RAYLIB=YES
