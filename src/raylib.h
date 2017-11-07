@@ -542,12 +542,12 @@ typedef struct VrDeviceInfo {
 //----------------------------------------------------------------------------------
 // Trace log type
 typedef enum { 
-    LOG_INFO = 0,
-    LOG_WARNING, 
-    LOG_ERROR, 
-    LOG_DEBUG, 
-    LOG_OTHER 
-} LogType;
+    LOG_DEBUG = 0,
+    LOG_INFO,
+    LOG_WARNING,
+    LOG_ERROR,
+    LOG_OTHER,
+} LogType; // sorted by order of importance
 
 // Shader location point type
 typedef enum {
@@ -774,6 +774,7 @@ RLAPI Matrix MatrixIdentity(void);                                // Returns ide
 RLAPI void ShowLogo(void);                                        // Activate raylib logo at startup (can be done with flags)
 RLAPI void SetConfigFlags(char flags);                            // Setup window configuration flags (view FLAGS)
 RLAPI void TraceLog(int logType, const char *text, ...);          // Show trace log messages (LOG_INFO, LOG_WARNING, LOG_ERROR, LOG_DEBUG)
+RLAPI void SetLogLevel(int level);                                // Set the current log level
 RLAPI void TakeScreenshot(const char *fileName);                  // Takes a screenshot of current screen (saved a .png)
 RLAPI int GetRandomValue(int min, int max);                       // Returns a random value between min and max (both included)
 

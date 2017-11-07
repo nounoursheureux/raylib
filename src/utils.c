@@ -75,6 +75,7 @@
 #if defined(PLATFORM_ANDROID)
 AAssetManager *assetManager;
 #endif
+static int logLevel = LOG_OTHER;
 
 //----------------------------------------------------------------------------------
 // Module specific Functions Declaration
@@ -90,6 +91,12 @@ static int android_close(void *cookie);
 // Module Functions Definition - Utilities
 //----------------------------------------------------------------------------------
 
+// Set the current log level
+void SetLogLevel(int level)
+{
+    logLevel = level;
+}
+
 // Show trace log messages (LOG_INFO, LOG_WARNING, LOG_ERROR, LOG_DEBUG)
 void TraceLog(int msgType, const char *text, ...)
 {
@@ -100,6 +107,12 @@ void TraceLog(int msgType, const char *text, ...)
 #if defined(SUPPORT_TRACELOG_DEBUG)
     traceDebugMsgs = 1;
 #endif
+
+    if (msgType < logLevel)
+    {
+        if (msgType == LOG_ERROR) exit(1);
+        return;
+    }
 
     switch(msgType)
     {

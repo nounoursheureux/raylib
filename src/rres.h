@@ -300,7 +300,7 @@ typedef enum {
 } RRESVertexFormat;
 
 #if defined(RRES_STANDALONE)
-typedef enum { LOG_INFO = 0, LOG_ERROR, LOG_WARNING, LOG_DEBUG, LOG_OTHER } TraceLogType;
+typedef enum { LOG_DEBUG = 0, LOG_INFO, LOG_WARNING, LOG_ERROR, LOG_OTHER } TraceLogType;
 #endif
 
 //----------------------------------------------------------------------------------
