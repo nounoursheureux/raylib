@@ -3241,13 +3241,45 @@ static Model LoadIQM(const char *fileName)
 #endif
 
 #if defined(SUPPORT_FILEFORMAT_GLTF)
+
+/* void LoadAccessor(void* dst, cgltf_accessor* acc)
+{
+    unsigned int size = 0;
+    switch (acc->component_type)
+    {
+        case cgltf_component_type_r_8:
+            break;
+        case cgltf_component_type_r_8u:
+            break;
+        case cgltf_component_type_r_16:
+            break;
+        case cgltf_component_type_r_16u:
+            break;
+        case cgltf_component_type_r_32:
+            break;
+        case cgltf_component_type_r_32u:
+            break;
+        case cgltf_component_type_r_
+
+    }
+    if (acc->type == cgltf_type_scalar)
+    {
+    }
+    else if (acc->type == cgltf_type_vec2)
+    {
+    }
+    else if (acc->type == cgltf_type_vec3)
+    {
+    }
+} */
+
 // Load glTF mesh data
 static Model LoadGLTF(const char *fileName)
 {
     Model model = { 0 };
 
     // glTF file loading
-    FILE *gltfFile = fopen(fileName, "rb");
+    /* FILE *gltfFile = fopen(fileName, "rb");
 
     if (gltfFile == NULL)
     {
@@ -3262,44 +3294,123 @@ static Model LoadGLTF(const char *fileName)
     void *buffer = RL_MALLOC(size);
     fread(buffer, size, 1, gltfFile);
 
-    fclose(gltfFile);
+    fclose(gltfFile); */
+    // TODO: custom file/memory management ?
 
     // glTF data loading
     cgltf_options options = { 0 };
-    cgltf_data *data;
-    cgltf_result result = cgltf_parse(&options, buffer, size, &data);
+    cgltf_data *data = NULL;
+    cgltf_result result = cgltf_parse_file(&options, fileName, &data);
 
-    RL_FREE(buffer);
 
     if (result == cgltf_result_success)
     {
-        TraceLog(LOG_INFO, "[%s][%s] Model meshes/materials: %i/%i", (data->file_type == 2)? "glb" : "gltf", data->meshes_count, data->materials_count);
+
+        TraceLog(LOG_INFO, "[%s][%s] Model meshes/materials: %i/%i", fileName, (data->file_type == 2)? "glb" : "gltf", data->meshes_count, data->materials_count);
 
         // Read data buffers
         result = cgltf_load_buffers(&options, data, fileName);
 
         // Process glTF data and map to model
         model.meshCount = data->meshes_count;
-        model.meshes = RL_MALLOC(model.meshCount*sizeof(Mesh));
+        model.meshes = RL_CALLOC(model.meshCount, sizeof(Mesh));
+        model.materialCount = model.meshCount;
+        model.materials = RL_MALLOC(model.materialCount * sizeof(Material));
+        model.meshMaterial = RL_MALLOC(model.meshCount * sizeof(int)); 
         
         for (int i = 0; i < model.meshCount; i++)
         {
-            // NOTE: Only support meshes defined by triangle primitives
-            //if (data->meshes[i].primitives[n].type == cgltf_primitive_type_triangles)
+            // data.meshes[i].name not used
+            // TODO: support more than 1 primitive
+            // TODO: support unindexed meshes
+
+            for (int j = 0; j < data->meshes[i].primitives[0].attributes_count; j++)
             {
-                // data.meshes[i].name not used
-                model.meshes[i].vertexCount = data->meshes[i].primitives_count*3;
-                model.meshes[i].triangleCount = data->meshes[i].primitives_count;
-                // data.meshes[i].weights not used (array of weights to be applied to the Morph Targets)
+                if (data->meshes[i].primitives[0].attributes[j].type == cgltf_attribute_type_position)
+                {
+                    cgltf_accessor* acc = data->meshes[i].primitives[0].attributes[j].data;
+                    model.meshes[i].vertexCount = acc->count;
+                    model.meshes[i].vertices = RL_MALLOC(sizeof(float)*model.meshes[i].vertexCount*3);
 
-                model.meshes[i].vertices = RL_MALLOC(sizeof(float)*model.meshes[i].vertexCount*3);       // Default vertex positions
-                model.meshes[i].normals = RL_MALLOC(sizeof(float)*model.meshes[i].vertexCount*3);        // Default vertex normals
-                model.meshes[i].texcoords = RL_MALLOC(sizeof(float)*model.meshes[i].vertexCount*2);      // Default vertex texcoords
+                    float* buf = (float*)acc->buffer_view->buffer->data+acc->buffer_view->offset/4+acc->offset/4;
+                    int n = 0;
+                    for (int k = 0; k < model.meshes[i].vertexCount; k++)
+                    {
+                        model.meshes[i].vertices[3*k] = buf[n];
+                        model.meshes[i].vertices[3*k+1] = buf[n+1];
+                        model.meshes[i].vertices[3*k+2] = buf[n+2];
+                        n += acc->stride/4;
+                    }
+                }
+                else if (data->meshes[i].primitives[0].attributes[j].type == cgltf_attribute_type_normal)
+                {
+                    cgltf_accessor* acc = data->meshes[i].primitives[0].attributes[j].data;
+                    model.meshes[i].normals = RL_MALLOC(sizeof(float)*acc->count*3);
 
-                model.meshes[i].indices = RL_MALLOC(sizeof(unsigned short)*model.meshes[i].triangleCount*3);
+                    float* buf = (float*)acc->buffer_view->buffer->data+acc->buffer_view->offset/4+acc->offset/4;
+                    int n = 0;
+                    for (int k = 0; k < acc->count; k++)
+                    {
+                        model.meshes[i].normals[3*k] = buf[n];
+                        model.meshes[i].normals[3*k+1] = buf[n+1];
+                        model.meshes[i].normals[3*k+2] = buf[n+2];
+                        n += acc->stride/4;
+                    }
+                }
+                else if (data->meshes[i].primitives[0].attributes[j].type == cgltf_attribute_type_texcoord)
+                {
+                    cgltf_accessor* acc = data->meshes[i].primitives[0].attributes[j].data;
+                    model.meshes[i].texcoords = RL_MALLOC(sizeof(float)*acc->count*2);
+                    // TODO: support unsigned short/...
 
+                    float* buf = (float*)acc->buffer_view->buffer->data+acc->buffer_view->offset/4+acc->offset/4;
+                    int n = 0;
+                    for (int k = 0; k < acc->count; k++)
+                    {
+                        model.meshes[i].texcoords[2*k] = buf[n];
+                        model.meshes[i].texcoords[2*k+1] = buf[n+1];
+                        n += acc->stride/4;
+                    }
+                }
+            }
+
+            cgltf_accessor* acc = data->meshes[i].primitives[0].indices;
+            model.meshes[i].triangleCount = acc->count / 3;
+            model.meshes[i].indices = RL_MALLOC(sizeof(unsigned short)*model.meshes[i].triangleCount*3);
+            // TODO: support indices other than unsigned short
+            unsigned short* buf = (unsigned short*)acc->buffer_view->buffer->data+acc->buffer_view->offset/2+acc->offset/2;
+            int n = 0;
+            for (int k = 0; k < acc->count; k++)
+            {
+                model.meshes[i].indices[k] = buf[n];
+                n += acc->stride/2;
+            }
+
+            model.meshMaterial[i] = i;
+            if (data->meshes[i].primitives[0].material)
+            {
+
+                // TODO: check if the material is not already loaded
+                char* dir_path = GetDirectoryPath(fileName);
+                char* texture_name = data->materials[0].pbr_metallic_roughness.base_color_texture.texture->image->uri;
+                char* texture_path = RL_MALLOC(strlen(dir_path) + strlen(texture_name) + 2);
+                strcpy(texture_path, dir_path);
+                strcat(texture_path, "/");
+                strcat(texture_path, texture_name);
+
+                Texture2D texture = LoadTexture(texture_path);
+                model.materials[i] = LoadMaterialDefault();
+                model.materials[i].maps[MAP_DIFFUSE].texture = texture;
+                model.meshMaterial[i] = i;
+            }
+            else
+            {
+                model.materials[i] = LoadMaterialDefault();
             }
         }
+
+        // TODO: support embedded textures
+
 
         // NOTE: data.buffers[] should be loaded to model.meshes and data.images[] should be loaded to model.materials
         // Use buffers[n].uri and images[n].uri... or use cgltf_load_buffers(&options, data, fileName);

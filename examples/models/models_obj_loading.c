@@ -28,9 +28,9 @@ int main()
     camera.fovy = 45.0f;                                // Camera field-of-view Y
     camera.type = CAMERA_PERSPECTIVE;                   // Camera mode type
 
-    Model model = LoadModel("resources/models/castle.obj");                 // Load OBJ model
-    Texture2D texture = LoadTexture("resources/models/castle_diffuse.png"); // Load model texture
-    model.materials[0].maps[MAP_DIFFUSE].texture = texture;                 // Set map diffuse texture
+    Model model = LoadModel("resources/Suzanne.gltf");                 // Load OBJ model
+    // Texture2D texture = LoadTexture("resources/models/castle_diffuse.png"); // Load model texture
+    // model.materials[0].maps[MAP_DIFFUSE].texture = texture;                 // Set map diffuse texture
     Vector3 position = { 0.0f, 0.0f, 0.0f };                                // Set model position
 
     SetTargetFPS(60);   // Set our game to run at 60 frames-per-second
@@ -70,7 +70,7 @@ int main()
 
     // De-Initialization
     //--------------------------------------------------------------------------------------
-    UnloadTexture(texture);     // Unload texture
+    // UnloadTexture(texture);     // Unload texture
     UnloadModel(model);         // Unload model
 
     CloseWindow();              // Close window and OpenGL context
