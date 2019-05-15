@@ -60,6 +60,7 @@
 #if defined(SUPPORT_FILEFORMAT_GLTF)
     #define CGLTF_IMPLEMENTATION
     #include "external/cgltf.h"         // glTF file format loading
+    #include "external/stb_image.h"
 #endif
 
 #if defined(SUPPORT_MESH_GENERATION)
@@ -3273,6 +3274,94 @@ static Model LoadIQM(const char *fileName)
     }
 } */
 
+const unsigned char base64_table[] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 62, 0, 0, 0, 63, 52, 53,
+    54, 55, 56, 57, 58, 59, 60, 61, 0, 0,
+    0, 0, 0, 0, 0, 0, 1, 2, 3, 4,
+    5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+    15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+    25, 0, 0, 0, 0, 0, 0, 26, 27, 28,
+    29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
+    39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+    49, 50, 51
+};
+
+int GetSizeBase64(char* input)
+{
+    int size = 0;
+    for (int i = 0; input[4*i] != 0; i++)
+    {
+        if (input[4*i+3] == '=')
+        {
+            if (input[4*i+2] == '=')
+            {
+                size += 1;
+            }
+            else
+            {
+                size += 2;
+            }
+        }
+        else size += 3;
+    }
+    return size;
+}
+
+unsigned char* DecodeBase64(char* input, int* size)
+{
+    *size = 0;
+    for (int i = 0; input[4*i] != 0; i++)
+    {
+        if (input[4*i+3] == '=')
+        {
+            if (input[4*i+2] == '=')
+            {
+                *size += 1;
+            }
+            else
+            {
+                *size += 2;
+            }
+        }
+        else *size += 3;
+    }
+
+    unsigned char* buf = (unsigned char*)RL_MALLOC(*size);
+    for (int i = 0; i < *size/3; i++)
+    {
+        unsigned char a = base64_table[input[4*i]];
+        unsigned char b = base64_table[input[4*i+1]];
+        unsigned char c = base64_table[input[4*i+2]];
+        unsigned char d = base64_table[input[4*i+3]];
+
+        buf[3*i] = (a << 2) | (b >> 4);
+        buf[3*i+1] = (b << 4) | (c >> 2);
+        buf[3*i+2] = (c << 6) | d;
+    }
+
+    if (*size % 3 == 1)
+    {
+        int n = *size/3;
+        unsigned char a = base64_table[input[4*n]];
+        unsigned char b = base64_table[input[4*n+1]];
+        buf[*size-1] = (a << 2) | (b >> 4);
+    }
+    else if (*size % 3 == 2)
+    {
+        int n = *size/3 ;
+        unsigned char a = base64_table[input[4*n]];
+        unsigned char b = base64_table[input[4*n+1]];
+        unsigned char c = base64_table[input[4*n+2]];
+        buf[*size-2] = (a << 2) | (b >> 4);
+        buf[*size-1] = (b << 4) | (c >> 2);
+    }
+    return buf;
+}
+
 #define LOAD_ACCESSOR(type, nbcomp, acc, dst) \
 { \
     int n = 0; \
@@ -3314,7 +3403,6 @@ static Model LoadGLTF(const char *fileName)
     cgltf_options options = { 0 };
     cgltf_data *data = NULL;
     cgltf_result result = cgltf_parse_file(&options, fileName, &data);
-
 
     if (result == cgltf_result_success)
     {
@@ -3396,13 +3484,48 @@ static Model LoadGLTF(const char *fileName)
 
                     // TODO: check if the material is not already loaded
                     char* dir_path = GetDirectoryPath(fileName);
-                    char* texture_name = data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_texture.texture->image->uri;
-                    char* texture_path = RL_MALLOC(strlen(dir_path) + strlen(texture_name) + 2);
-                    strcpy(texture_path, dir_path);
-                    strcat(texture_path, "/");
-                    strcat(texture_path, texture_name);
+                    cgltf_image* img = data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_texture.texture->image;
+                    Texture2D texture;
+                    if (img->uri) {
+                        if (strlen(img->uri) > 5 && img->uri[0] == 'd' 
+                                                 && img->uri[1] == 'a'
+                                                 && img->uri[2] == 't'
+                                                 && img->uri[3] == 'a'
+                                                 && img->uri[4] == ':')
+                        {
+                            // data URI
+                            // format: data:<mediatype>;base64,<data>
+                            
+                            // find the comma
+                            int i = 0;
+                            while (img->uri[i] != ',' && img->uri[i] != 0)
+                            {
+                                i++;
+                            }
+                            if (img->uri[i] == 0) {
+                                // error
+                            }
+                            else
+                            {
+                                int size;
+                                unsigned char* data = DecodeBase64(img->uri+i+1, &size);
+                                int w, h;
+                                unsigned char* raw = stbi_load_from_memory(data, size, &w, &h, NULL, 4);
+                                Image img = LoadImagePro(raw, w, h, UNCOMPRESSED_R8G8B8A8);
+                                texture = LoadTextureFromImage(img);
+                            }
+                        }
+                        else
+                        {
+                            char* texture_name = img->uri;
+                            char* texture_path = RL_MALLOC(strlen(dir_path) + strlen(texture_name) + 2);
+                            strcpy(texture_path, dir_path);
+                            strcat(texture_path, "/");
+                            strcat(texture_path, texture_name);
 
-                    Texture2D texture = LoadTexture(texture_path);
+                            texture = LoadTexture(texture_path);
+                        }
+                    }
                     model.materials[prim_index] = LoadMaterialDefault();
                     model.materials[prim_index].maps[MAP_DIFFUSE].texture = texture;
                 }
