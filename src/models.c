@@ -3273,6 +3273,19 @@ static Model LoadIQM(const char *fileName)
     }
 } */
 
+#define LOAD_ACCESSOR(type, nbcomp, acc, dst) \
+{ \
+    int n = 0; \
+    type* buf = (type*)acc->buffer_view->buffer->data+acc->buffer_view->offset/sizeof(type)+acc->offset/sizeof(type); \
+    for (int k = 0; k < acc->count; k++) {\
+        for (int l = 0; l < nbcomp; l++) {\
+            dst[nbcomp*k+l] = buf[n+l];\
+        }\
+        n += acc->stride/sizeof(type);\
+    }\
+}
+
+
 // Load glTF mesh data
 static Model LoadGLTF(const char *fileName)
 {
@@ -3311,101 +3324,93 @@ static Model LoadGLTF(const char *fileName)
         // Read data buffers
         result = cgltf_load_buffers(&options, data, fileName);
 
+        int nb_primitives = 0;
+        for (int i = 0; i < data->meshes_count; i++)
+        {
+            nb_primitives += (int)data->meshes[i].primitives_count;
+        }
+
         // Process glTF data and map to model
-        model.meshCount = data->meshes_count;
+        model.meshCount = nb_primitives;
         model.meshes = RL_CALLOC(model.meshCount, sizeof(Mesh));
         model.materialCount = model.meshCount;
         model.materials = RL_MALLOC(model.materialCount * sizeof(Material));
         model.meshMaterial = RL_MALLOC(model.meshCount * sizeof(int)); 
+
+        int prim_index = 0;
         
-        for (int i = 0; i < model.meshCount; i++)
+        for (int i = 0; i < data->meshes_count; i++)
         {
             // data.meshes[i].name not used
             // TODO: support more than 1 primitive
             // TODO: support unindexed meshes
 
-            for (int j = 0; j < data->meshes[i].primitives[0].attributes_count; j++)
+            for (int p = 0; p < data->meshes[i].primitives_count; p++)
             {
-                if (data->meshes[i].primitives[0].attributes[j].type == cgltf_attribute_type_position)
-                {
-                    cgltf_accessor* acc = data->meshes[i].primitives[0].attributes[j].data;
-                    model.meshes[i].vertexCount = acc->count;
-                    model.meshes[i].vertices = RL_MALLOC(sizeof(float)*model.meshes[i].vertexCount*3);
 
-                    float* buf = (float*)acc->buffer_view->buffer->data+acc->buffer_view->offset/4+acc->offset/4;
-                    int n = 0;
-                    for (int k = 0; k < model.meshes[i].vertexCount; k++)
+                for (int j = 0; j < data->meshes[i].primitives[p].attributes_count; j++)
+                {
+                    if (data->meshes[i].primitives[p].attributes[j].type == cgltf_attribute_type_position)
                     {
-                        model.meshes[i].vertices[3*k] = buf[n];
-                        model.meshes[i].vertices[3*k+1] = buf[n+1];
-                        model.meshes[i].vertices[3*k+2] = buf[n+2];
-                        n += acc->stride/4;
+                        cgltf_accessor* acc = data->meshes[i].primitives[p].attributes[j].data;
+                        model.meshes[prim_index].vertexCount = acc->count;
+                        model.meshes[prim_index].vertices = RL_MALLOC(sizeof(float)*model.meshes[prim_index].vertexCount*3);
+
+                        LOAD_ACCESSOR(float, 3, acc, model.meshes[prim_index].vertices)
+                    }
+                    else if (data->meshes[i].primitives[p].attributes[j].type == cgltf_attribute_type_normal)
+                    {
+                        cgltf_accessor* acc = data->meshes[i].primitives[p].attributes[j].data;
+                        model.meshes[prim_index].normals = RL_MALLOC(sizeof(float)*acc->count*3);
+
+                        LOAD_ACCESSOR(float, 3, acc, model.meshes[prim_index].normals)
+
+                    }
+                    else if (data->meshes[i].primitives[p].attributes[j].type == cgltf_attribute_type_texcoord)
+                    {
+                        cgltf_accessor* acc = data->meshes[i].primitives[p].attributes[j].data;
+                        model.meshes[prim_index].texcoords = RL_MALLOC(sizeof(float)*acc->count*2);
+                        // TODO: support unsigned short/...
+
+                        LOAD_ACCESSOR(float, 2, acc, model.meshes[prim_index].texcoords)
                     }
                 }
-                else if (data->meshes[i].primitives[0].attributes[j].type == cgltf_attribute_type_normal)
+
+                cgltf_accessor* acc = data->meshes[i].primitives[p].indices;
+                if (acc)
                 {
-                    cgltf_accessor* acc = data->meshes[i].primitives[0].attributes[j].data;
-                    model.meshes[i].normals = RL_MALLOC(sizeof(float)*acc->count*3);
-
-                    float* buf = (float*)acc->buffer_view->buffer->data+acc->buffer_view->offset/4+acc->offset/4;
-                    int n = 0;
-                    for (int k = 0; k < acc->count; k++)
-                    {
-                        model.meshes[i].normals[3*k] = buf[n];
-                        model.meshes[i].normals[3*k+1] = buf[n+1];
-                        model.meshes[i].normals[3*k+2] = buf[n+2];
-                        n += acc->stride/4;
-                    }
+                    model.meshes[prim_index].triangleCount = acc->count / 3;
+                    model.meshes[prim_index].indices = RL_MALLOC(sizeof(unsigned short)*model.meshes[prim_index].triangleCount*3);
+                    // TODO: support indices other than unsigned short
+                    LOAD_ACCESSOR(unsigned short, 1, acc, model.meshes[prim_index].indices)
                 }
-                else if (data->meshes[i].primitives[0].attributes[j].type == cgltf_attribute_type_texcoord)
+                else
                 {
-                    cgltf_accessor* acc = data->meshes[i].primitives[0].attributes[j].data;
-                    model.meshes[i].texcoords = RL_MALLOC(sizeof(float)*acc->count*2);
-                    // TODO: support unsigned short/...
-
-                    float* buf = (float*)acc->buffer_view->buffer->data+acc->buffer_view->offset/4+acc->offset/4;
-                    int n = 0;
-                    for (int k = 0; k < acc->count; k++)
-                    {
-                        model.meshes[i].texcoords[2*k] = buf[n];
-                        model.meshes[i].texcoords[2*k+1] = buf[n+1];
-                        n += acc->stride/4;
-                    }
+                    // unindexed mesh
+                    model.meshes[prim_index].triangleCount = model.meshes[prim_index].vertexCount / 3;
                 }
-            }
 
-            cgltf_accessor* acc = data->meshes[i].primitives[0].indices;
-            model.meshes[i].triangleCount = acc->count / 3;
-            model.meshes[i].indices = RL_MALLOC(sizeof(unsigned short)*model.meshes[i].triangleCount*3);
-            // TODO: support indices other than unsigned short
-            unsigned short* buf = (unsigned short*)acc->buffer_view->buffer->data+acc->buffer_view->offset/2+acc->offset/2;
-            int n = 0;
-            for (int k = 0; k < acc->count; k++)
-            {
-                model.meshes[i].indices[k] = buf[n];
-                n += acc->stride/2;
-            }
+                model.meshMaterial[prim_index] = prim_index;
+                if (data->meshes[i].primitives[p].material)
+                {
 
-            model.meshMaterial[i] = i;
-            if (data->meshes[i].primitives[0].material)
-            {
+                    // TODO: check if the material is not already loaded
+                    char* dir_path = GetDirectoryPath(fileName);
+                    char* texture_name = data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_texture.texture->image->uri;
+                    char* texture_path = RL_MALLOC(strlen(dir_path) + strlen(texture_name) + 2);
+                    strcpy(texture_path, dir_path);
+                    strcat(texture_path, "/");
+                    strcat(texture_path, texture_name);
 
-                // TODO: check if the material is not already loaded
-                char* dir_path = GetDirectoryPath(fileName);
-                char* texture_name = data->materials[0].pbr_metallic_roughness.base_color_texture.texture->image->uri;
-                char* texture_path = RL_MALLOC(strlen(dir_path) + strlen(texture_name) + 2);
-                strcpy(texture_path, dir_path);
-                strcat(texture_path, "/");
-                strcat(texture_path, texture_name);
-
-                Texture2D texture = LoadTexture(texture_path);
-                model.materials[i] = LoadMaterialDefault();
-                model.materials[i].maps[MAP_DIFFUSE].texture = texture;
-                model.meshMaterial[i] = i;
-            }
-            else
-            {
-                model.materials[i] = LoadMaterialDefault();
+                    Texture2D texture = LoadTexture(texture_path);
+                    model.materials[prim_index] = LoadMaterialDefault();
+                    model.materials[prim_index].maps[MAP_DIFFUSE].texture = texture;
+                }
+                else
+                {
+                    model.materials[prim_index] = LoadMaterialDefault();
+                }
+                prim_index++;
             }
         }
 
