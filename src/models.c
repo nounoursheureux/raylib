@@ -638,7 +638,7 @@ Model LoadModel(const char *fileName)
     if (IsFileExtension(fileName, ".obj")) model = LoadOBJ(fileName);
 #endif
 #if defined(SUPPORT_FILEFORMAT_GLTF)
-    if (IsFileExtension(fileName, ".gltf")) model = LoadGLTF(fileName);
+    if (IsFileExtension(fileName, ".gltf") || IsFileExtension(fileName, ".glb")) model = LoadGLTF(fileName);
 #endif
 #if defined(SUPPORT_FILEFORMAT_IQM)
     if (IsFileExtension(fileName, ".iqm")) model = LoadIQM(fileName);
@@ -3483,51 +3483,101 @@ static Model LoadGLTF(const char *fileName)
                 {
 
                     // TODO: check if the material is not already loaded
-                    char* dir_path = GetDirectoryPath(fileName);
-                    cgltf_image* img = data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_texture.texture->image;
+                    
                     Texture2D texture;
-                    if (img->uri) {
-                        if (strlen(img->uri) > 5 && img->uri[0] == 'd' 
-                                                 && img->uri[1] == 'a'
-                                                 && img->uri[2] == 't'
-                                                 && img->uri[3] == 'a'
-                                                 && img->uri[4] == ':')
-                        {
-                            // data URI
-                            // format: data:<mediatype>;base64,<data>
-                            
-                            // find the comma
-                            int i = 0;
-                            while (img->uri[i] != ',' && img->uri[i] != 0)
+                    char* dir_path = GetDirectoryPath(fileName);
+                    Color tint;
+                    if (data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_factor)
+                    {
+                        tint.r = (unsigned char)(data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_factor[0] * 255.99f);
+                        tint.g = (unsigned char)(data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_factor[1] * 255.99f);
+                        tint.b = (unsigned char)(data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_factor[2] * 255.99f);
+                        tint.a = (unsigned char)(data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_factor[3] * 255.99f);
+                    }
+                    else
+                    {
+                        tint.r = 1.f;
+                        tint.g = 1.f;
+                        tint.b = 1.f;
+                        tint.a = 1.f;
+                    }
+                    if (data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_texture.texture)
+                    {
+
+                        cgltf_image* img = data->meshes[i].primitives[p].material->pbr_metallic_roughness.base_color_texture.texture->image;
+                        if (img->uri) {
+                            if (strlen(img->uri) > 5 && img->uri[0] == 'd' 
+                                    && img->uri[1] == 'a'
+                                    && img->uri[2] == 't'
+                                    && img->uri[3] == 'a'
+                                    && img->uri[4] == ':')
                             {
-                                i++;
-                            }
-                            if (img->uri[i] == 0) {
-                                // error
+                                // data URI
+                                // format: data:<mediatype>;base64,<data>
+
+                                // find the comma
+                                int i = 0;
+                                while (img->uri[i] != ',' && img->uri[i] != 0)
+                                {
+                                    i++;
+                                }
+                                if (img->uri[i] == 0) {
+                                    // error
+                                }
+                                else
+                                {
+                                    int size;
+                                    unsigned char* data = DecodeBase64(img->uri+i+1, &size);
+                                    int w, h;
+                                    unsigned char* raw = stbi_load_from_memory(data, size, &w, &h, NULL, 4);
+                                    Image image = LoadImagePro(raw, w, h, UNCOMPRESSED_R8G8B8A8);
+                                    ImageColorTint(&image, tint);
+                                    texture = LoadTextureFromImage(image);
+                                    UnloadImage(image);
+                                }
                             }
                             else
                             {
-                                int size;
-                                unsigned char* data = DecodeBase64(img->uri+i+1, &size);
-                                int w, h;
-                                unsigned char* raw = stbi_load_from_memory(data, size, &w, &h, NULL, 4);
-                                Image img = LoadImagePro(raw, w, h, UNCOMPRESSED_R8G8B8A8);
-                                texture = LoadTextureFromImage(img);
+                                char* texture_name = img->uri;
+                                char* texture_path = RL_MALLOC(strlen(dir_path) + strlen(texture_name) + 2);
+                                strcpy(texture_path, dir_path);
+                                strcat(texture_path, "/");
+                                strcat(texture_path, texture_name);
+
+                                Image image = LoadImage(texture_path);
+                                ImageColorTint(&image, tint);
+                                texture = LoadTextureFromImage(image);
+                                UnloadImage(image);
                             }
+                        }
+                        else if (img->buffer_view)
+                        {
+                            unsigned char* data = RL_MALLOC(img->buffer_view->size);
+                            int n = img->buffer_view->offset;
+                            int stride = img->buffer_view->stride ? img->buffer_view->stride : 1;
+                            for (int i = 0; i < img->buffer_view->size; i++)
+                            {
+                                data[i] = ((unsigned char*)img->buffer_view->buffer->data)[n];
+                                n += stride;
+                            }
+
+                            int w, h;
+                            unsigned char* raw = stbi_load_from_memory(data, img->buffer_view->size, &w, &h, NULL, 4);
+                            Image image = LoadImagePro(raw, w, h, UNCOMPRESSED_R8G8B8A8);
+                            ImageColorTint(&image, tint);
+                            texture = LoadTextureFromImage(image);
+                            UnloadImage(image);
                         }
                         else
                         {
-                            char* texture_name = img->uri;
-                            char* texture_path = RL_MALLOC(strlen(dir_path) + strlen(texture_name) + 2);
-                            strcpy(texture_path, dir_path);
-                            strcat(texture_path, "/");
-                            strcat(texture_path, texture_name);
-
-                            texture = LoadTexture(texture_path);
+                            Image image = LoadImageEx(&tint, 1, 1);
+                            texture = LoadTextureFromImage(image);
+                            UnloadImage(image);
                         }
+                        model.materials[prim_index] = LoadMaterialDefault();
+                        model.materials[prim_index].maps[MAP_DIFFUSE].texture = texture;
+
                     }
-                    model.materials[prim_index] = LoadMaterialDefault();
-                    model.materials[prim_index].maps[MAP_DIFFUSE].texture = texture;
                 }
                 else
                 {
@@ -3537,15 +3587,11 @@ static Model LoadGLTF(const char *fileName)
             }
         }
 
-        // TODO: support embedded textures
-
-
-        // NOTE: data.buffers[] should be loaded to model.meshes and data.images[] should be loaded to model.materials
-        // Use buffers[n].uri and images[n].uri... or use cgltf_load_buffers(&options, data, fileName);
-
         cgltf_free(data);
     }
     else TraceLog(LOG_WARNING, "[%s] glTF data could not be loaded", fileName);
+
+    // TODO: error handling
 
     return model;
 }
