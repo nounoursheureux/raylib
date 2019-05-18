@@ -25,9 +25,9 @@ int main()
     // Define the camera to look into our 3d world
     Camera camera = {{ 30.0f, 30.0f, 30.0f }, { 0.0f, 10.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, 45.0f, 0 };
 
-    Model model = LoadModel("resources/Duck.gltf");                     // Load default model obj
-    // Texture2D texture = LoadTexture("resources/models/turret_diffuse.png");     // Load default model texture
-    // model.materials[0].maps[MAP_DIFFUSE].texture = texture; // Bind texture to model
+    Model model = LoadModel("resources/models/turret.obj");                     // Load default model obj
+    Texture2D texture = LoadTexture("resources/models/turret_diffuse.png");     // Load default model texture
+    model.materials[0].maps[MAP_DIFFUSE].texture = texture; // Bind texture to model
 
     Vector3 position = { 0.0, 0.0, 0.0 };                   // Set model position
     BoundingBox bounds = MeshBoundingBox(model.meshes[0]);  // Set model bounds
@@ -60,9 +60,9 @@ int main()
                 }
                 else if (IsFileExtension(droppedFiles[0], ".png"))
                 {
-                    // UnloadTexture(texture);
-                    // texture = LoadTexture(droppedFiles[0]);
-                    //model.materials[0].maps[MAP_DIFFUSE].texture = texture;
+                    UnloadTexture(texture);
+                    texture = LoadTexture(droppedFiles[0]);
+                    model.materials[0].maps[MAP_DIFFUSE].texture = texture;
                 }
 
                 strcpy(objFilename, GetFileName(droppedFiles[0]));

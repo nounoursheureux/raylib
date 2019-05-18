@@ -3333,10 +3333,10 @@ unsigned char* DecodeBase64(char* input, int* size)
     unsigned char* buf = (unsigned char*)RL_MALLOC(*size);
     for (int i = 0; i < *size/3; i++)
     {
-        unsigned char a = base64_table[input[4*i]];
-        unsigned char b = base64_table[input[4*i+1]];
-        unsigned char c = base64_table[input[4*i+2]];
-        unsigned char d = base64_table[input[4*i+3]];
+        unsigned char a = base64_table[(int)input[4*i]];
+        unsigned char b = base64_table[(int)input[4*i+1]];
+        unsigned char c = base64_table[(int)input[4*i+2]];
+        unsigned char d = base64_table[(int)input[4*i+3]];
 
         buf[3*i] = (a << 2) | (b >> 4);
         buf[3*i+1] = (b << 4) | (c >> 2);
@@ -3346,16 +3346,16 @@ unsigned char* DecodeBase64(char* input, int* size)
     if (*size % 3 == 1)
     {
         int n = *size/3;
-        unsigned char a = base64_table[input[4*n]];
-        unsigned char b = base64_table[input[4*n+1]];
+        unsigned char a = base64_table[(int)input[4*n]];
+        unsigned char b = base64_table[(int)input[4*n+1]];
         buf[*size-1] = (a << 2) | (b >> 4);
     }
     else if (*size % 3 == 2)
     {
         int n = *size/3 ;
-        unsigned char a = base64_table[input[4*n]];
-        unsigned char b = base64_table[input[4*n+1]];
-        unsigned char c = base64_table[input[4*n+2]];
+        unsigned char a = base64_table[(int)input[4*n]];
+        unsigned char b = base64_table[(int)input[4*n+1]];
+        unsigned char c = base64_table[(int)input[4*n+2]];
         buf[*size-2] = (a << 2) | (b >> 4);
         buf[*size-1] = (b << 4) | (c >> 2);
     }
@@ -3381,7 +3381,7 @@ static Model LoadGLTF(const char *fileName)
     Model model = { 0 };
 
     // glTF file loading
-    /* FILE *gltfFile = fopen(fileName, "rb");
+    FILE *gltfFile = fopen(fileName, "rb");
 
     if (gltfFile == NULL)
     {
@@ -3396,13 +3396,13 @@ static Model LoadGLTF(const char *fileName)
     void *buffer = RL_MALLOC(size);
     fread(buffer, size, 1, gltfFile);
 
-    fclose(gltfFile); */
-    // TODO: custom file/memory management ?
+    fclose(gltfFile);
 
     // glTF data loading
     cgltf_options options = { 0 };
     cgltf_data *data = NULL;
-    cgltf_result result = cgltf_parse_file(&options, fileName, &data);
+    cgltf_result result = cgltf_parse(&options, buffer, size, &data);
+    // cgltf_result result = cgltf_parse_file(&options, fileName, &data);
 
     if (result == cgltf_result_success)
     {
@@ -3429,9 +3429,6 @@ static Model LoadGLTF(const char *fileName)
         
         for (int i = 0; i < data->meshes_count; i++)
         {
-            // data.meshes[i].name not used
-            // TODO: support more than 1 primitive
-            // TODO: support unindexed meshes
 
             for (int p = 0; p < data->meshes[i].primitives_count; p++)
             {
@@ -3457,20 +3454,33 @@ static Model LoadGLTF(const char *fileName)
                     else if (data->meshes[i].primitives[p].attributes[j].type == cgltf_attribute_type_texcoord)
                     {
                         cgltf_accessor* acc = data->meshes[i].primitives[p].attributes[j].data;
-                        model.meshes[prim_index].texcoords = RL_MALLOC(sizeof(float)*acc->count*2);
-                        // TODO: support unsigned short/...
-
-                        LOAD_ACCESSOR(float, 2, acc, model.meshes[prim_index].texcoords)
+                        if (acc->component_type == cgltf_component_type_r_32f)
+                        {
+                            model.meshes[prim_index].texcoords = RL_MALLOC(sizeof(float)*acc->count*2);
+                            LOAD_ACCESSOR(float, 2, acc, model.meshes[prim_index].texcoords)
+                        }
+                        else
+                        {
+                            // TODO: support normalized unsigned byte/unsigned short texture coordinates
+                            TraceLog(LOG_WARNING, "[%s] Texture coordinates must be float", fileName);
+                        }
                     }
                 }
 
                 cgltf_accessor* acc = data->meshes[i].primitives[p].indices;
                 if (acc)
                 {
-                    model.meshes[prim_index].triangleCount = acc->count / 3;
-                    model.meshes[prim_index].indices = RL_MALLOC(sizeof(unsigned short)*model.meshes[prim_index].triangleCount*3);
-                    // TODO: support indices other than unsigned short
-                    LOAD_ACCESSOR(unsigned short, 1, acc, model.meshes[prim_index].indices)
+                    if (acc->component_type == cgltf_component_type_r_16u)
+                    {
+                        model.meshes[prim_index].triangleCount = acc->count / 3;
+                        model.meshes[prim_index].indices = RL_MALLOC(sizeof(unsigned short)*model.meshes[prim_index].triangleCount*3);
+                        LOAD_ACCESSOR(unsigned short, 1, acc, model.meshes[prim_index].indices)
+                    }
+                    else
+                    {
+                        // TODO: support unsigned byte/unsigned int
+                        TraceLog(LOG_WARNING, "[%s] Indices must be unsigned short", fileName);
+                    }
                 }
                 else
                 {
@@ -3590,8 +3600,6 @@ static Model LoadGLTF(const char *fileName)
         cgltf_free(data);
     }
     else TraceLog(LOG_WARNING, "[%s] glTF data could not be loaded", fileName);
-
-    // TODO: error handling
 
     return model;
 }
